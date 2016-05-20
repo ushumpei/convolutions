@@ -10,8 +10,8 @@ int main(void) {
 
   FILE *input_file;
   FILE *filter_file;
-  char *input_file_name   = "input.csv";
-  char *filter_file_name  = "filter.csv";
+  char *input_file_name   = "../data/input.csv";
+  char *filter_file_name  = "../data/filter.csv";
 
   float filter_data[MAX_FILTER_SIZE];
   int input_data[MAX_DATA_SIZE];
