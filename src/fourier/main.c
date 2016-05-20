@@ -54,6 +54,11 @@ int main(int argc, char *argv){
   fftw_plan products_plan = fftw_plan_dft_c2r_1d(signal_length, f_products, products, FFTW_ESTIMATE);
   fftw_execute(products_plan);
 
+  // 定数を除去する
+  for(i = 0; i < signal_length; i++) {
+    products[i] = products[i] / signal_length;
+  }
+
   // 出力する
   printf("\nSIGNALS:\n");
   for(i = 0; i < signal_length; i++) {
