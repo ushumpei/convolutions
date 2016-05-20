@@ -1,55 +1,96 @@
-/***************************/
-/* FourierTransformation.c */
-/***************************/
-
-// 要素数Nの数列 a[m] をフーリエ変換で b[n] にする。添字は 0,...,N-1
-// b[n] = sum[m=0,N-1]  a[m]*exp(-2*PI*I* (m/N) *n)
-
 #include <stdio.h>
-#include <complex.h> // complex.h は fftw3.h より先に include する
-#include <fftw3.h>   // windows環境では #include "C:/path/to/fftw3.h"
-                     // あるいは        #include "./相対パス/fftw3.h"
+#include <stdlib.h>
+#include <fftw3.h>
 
-int main( void ){
+#define MAX_SIGNALS_SIZE 1000
+#define MAX_STRINGS 32
 
-  int N=4;
+void get_double_data(const char *filename, double *data, int *datasize);
 
-  // a,b は double _Complex 型のC99標準複素配列と実質的に同じ
-  // double _Complex a[4] としても動くけど計算速度が低下する可能性あり
-  fftw_complex *a, *b;
-  a = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * N);
-  b = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * N);
+int main(int argc, char *argv){
+  const char* signal_file = "../data/input.csv";
+  double *signals;
+  fftw_complex *f_signals;
+  int signal_length;
 
-  // プランの生成
-  // フーリエ逆変換つまり位相因子を exp(-k)ではなく exp(+k)とする場合は
-  // FFTW_FORWARD の代わりに FFTW_BACKWARD とする
-  fftw_plan plan;
-  plan = fftw_plan_dft_1d( N, a, b, FFTW_FORWARD, FFTW_ESTIMATE );
+  const char* filter_file = "../data/filter.csv";
+  double *filter;
+  fftw_complex *f_filter;
+  int filter_length;
 
-  // フーリエ変換前の数列値を設定
-  a[0] = 1.0 + 0.0*I;
-  a[1] = 2.0 + 0.0*I;
-  a[2] = 5.0 + 0.0*I;
-  a[3] = 3.0 + 0.0*I;
+  double *products;
+  fftw_complex *f_products;
 
-  // フーリエ変換実行   b[n]に計算結果が入る
-  fftw_execute(plan);
+  int i;
+  signals   = (double *) malloc(sizeof(double) * MAX_SIGNALS_SIZE);
+  filter    = (double *) malloc(sizeof(double) * MAX_SIGNALS_SIZE);
+  products  = (double *) malloc(sizeof(double) * MAX_SIGNALS_SIZE);
 
-  // b[n]の値を表示
-  int n;
-  for( n=0; n<N; n++ ){
-    printf("b_%d = %+lf %+lf*i\n", n, creal(b[n]), cimag(b[n]) );
+  // ファイルから読み込む
+  get_double_data(filter_file, filter,  &filter_length);
+  get_double_data(signal_file, signals, &signal_length);
+
+  // 積をとるためにFilterをゼロ埋めする
+  for(i = filter_length; i < signal_length; i++) {
+    filter[i] = 0;
   }
 
-  // ここで a[m] の値を変えて再度 fftw_execute(plan) を実行すれば、
-  // b[n] が再計算される。
+  // フーリエ変換実行
+  f_signals = (fftw_complex *)fftw_malloc(sizeof(fftw_complex) * signal_length);
+  f_filter  = (fftw_complex *)fftw_malloc(sizeof(fftw_complex) * signal_length);
+  fftw_plan signals_plan = fftw_plan_dft_r2c_1d(signal_length, signals, f_signals, FFTW_ESTIMATE);
+  fftw_plan filter_plan  = fftw_plan_dft_r2c_1d(filter_length, filter,  f_filter,  FFTW_ESTIMATE);
+  fftw_execute(signals_plan);
+  fftw_execute(filter_plan);
 
-  // 計算終了時、メモリ開放を忘れないように
-  if(plan) fftw_destroy_plan(plan);
-  fftw_free(a); fftw_free(b);
+  // 複素数として積をとる
+  f_products = (fftw_complex *)fftw_malloc(sizeof(fftw_complex) * signal_length);
+  for(i = 0; i < signal_length; i++) {
+    f_products[i][0] = f_signals[i][0] * f_filter[i][0] - f_signals[i][1] * f_filter[i][1];
+    f_products[i][1] = f_signals[i][1] * f_filter[i][0] + f_signals[i][0] * f_filter[i][1];
+  }
 
-  return 0;
+  // 逆フーリエ変換を実行
+  fftw_plan products_plan = fftw_plan_dft_c2r_1d(signal_length, f_products, products, FFTW_ESTIMATE);
+  fftw_execute(products_plan);
+
+  // 出力する
+  printf("\nSIGNALS:\n");
+  for(i = 0; i < signal_length; i++) {
+    printf("%d:\t%f\n", i, signals[i]);
+  }
+  printf("\nFILTER:\n");
+  for(i = 0; i < signal_length; i++) {
+    printf("%d:\t%f\n", i, filter[i]);
+  }
+  printf("\nOUTPUT:\n");
+  for(i = 0; i < signal_length; i++) {
+    printf("%d:\t%f\n", i, products[i]);
+  }
+
+  fftw_destroy_plan(signals_plan);
+  fftw_destroy_plan(filter_plan);
+  fftw_destroy_plan(products_plan);
+
 }
 
+void get_double_data(const char *filename, double *data, int *datasize) {
+  FILE *fp;
+  char line[MAX_STRINGS];
 
+  if ((fp = fopen(filename, "r")) == NULL) {
+    printf("ファイル「%s」のオープンに失敗しました。プログラムを終了します。\n", filename);
+    exit(1);
+  }
+
+  /* データ処理 */
+  *datasize = 0;
+  while (fgets(line, MAX_STRINGS, fp) != NULL) {
+    data[*datasize] = atof(line);
+    (*datasize)++;
+  }
+
+  /* ファイル・クローズ */
+  fclose(fp);
+}
 
